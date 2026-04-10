@@ -2,6 +2,7 @@
 
 import express, { Request, Response } from 'express';
 import readline from 'readline';
+import crypto from 'crypto';
 import { getValidAccessToken, loadTokens, saveTokens } from '../token-manager.js';
 import { startOAuthFlow, exchangeCodeForTokens } from '../oauth.js';
 import { ensureRequiredSystemPrompt, stripUnknownFields } from './middleware.js';
@@ -35,6 +36,16 @@ function askQuestion(prompt: string): Promise<string> {
   });
 }
 
+// Read at startup so the value is fixed for the lifetime of the process.
+// Trim whitespace so accidental trailing newlines in env files don't silently
+// enable auth mode with an unmatchable key.
+const ROUTER_API_KEY: string | undefined = process.env.ROUTER_API_KEY?.trim() || undefined;
+
+// A random nonce used to HMAC both sides of every key comparison. This ensures
+// timingSafeEqual always receives fixed-length digests, preventing the early
+// return on length mismatch from leaking the configured key length.
+const HMAC_KEY = crypto.randomBytes(32);
+
 /**
  * Extracts bearer token from Authorization header
  * @param req Express request object
@@ -46,6 +57,58 @@ function extractBearerToken(req: Request): string | null {
     return authHeader.substring(7);
   }
   return null;
+}
+
+/**
+ * Extracts the presented API key from a request, checking both the
+ * x-api-key header and the Authorization: Bearer scheme.
+ */
+function extractPresentedKey(req: Request): string | null {
+  const xApiKey = req.headers['x-api-key'];
+  if (xApiKey && typeof xApiKey === 'string') {
+    return xApiKey;
+  }
+  return extractBearerToken(req);
+}
+
+/**
+ * Returns true when the presented key matches ROUTER_API_KEY using a
+ * constant-time comparison to prevent timing attacks.
+ */
+function isValidRouterApiKey(presented: string): boolean {
+  if (!ROUTER_API_KEY) {
+    return false;
+  }
+  // HMAC both values with the same nonce so timingSafeEqual always receives
+  // 32-byte digests. Without this, comparing raw buffers of different lengths
+  // requires an early return that leaks the configured key length via timing.
+  const expected = crypto.createHmac('sha256', HMAC_KEY).update(ROUTER_API_KEY).digest();
+  const actual = crypto.createHmac('sha256', HMAC_KEY).update(presented).digest();
+  return crypto.timingSafeEqual(expected, actual);
+}
+
+/**
+ * Middleware that enforces ROUTER_API_KEY authentication when the env var is
+ * set. Requests that do not present the correct key receive a 401 response.
+ * When ROUTER_API_KEY is unset this middleware is a no-op.
+ */
+function requireRouterApiKey(req: Request, res: Response, next: () => void): void {
+  if (!ROUTER_API_KEY) {
+    next();
+    return;
+  }
+  const presented = extractPresentedKey(req);
+  if (!presented || !isValidRouterApiKey(presented)) {
+    res.status(401).json({
+      type: 'error',
+      error: {
+        type: 'authentication_error',
+        message: 'Invalid or missing API key.',
+      },
+    });
+    return;
+  }
+  next();
 }
 
 // Endpoint configuration
@@ -157,6 +220,12 @@ More info: https://github.com/nsxdavid/anthropic-max-router
 let PORT = process.env.ROUTER_PORT ? parseInt(process.env.ROUTER_PORT) : 3000;
 parseArgs();
 
+// When ROUTER_API_KEY is set the router owns authentication end-to-end, so
+// bearer passthrough must be disabled regardless of any CLI flag.
+if (ROUTER_API_KEY) {
+  endpointConfig.allowBearerPassthrough = false;
+}
+
 const app = express();
 
 // Anthropic API configuration
@@ -165,16 +234,37 @@ const ANTHROPIC_VERSION = '2023-06-01';
 const ANTHROPIC_BETA =
   'oauth-2025-04-20,claude-code-20250219,interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14';
 
-// Parse JSON request bodies with increased limit for large payloads
-app.use(express.json({ limit: '50mb' }));
-
-// Health check endpoint
+// Health check must be registered before auth middleware so monitoring tools
+// can reach it without an API key even when ROUTER_API_KEY is set.
 app.get('/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok', service: 'anthropic-max-plan-router' });
 });
 
-// OpenAI Models endpoint - proxy to Anthropic API with API key
+// Enforce ROUTER_API_KEY on every request when the env var is set. Placed
+// before express.json() so unauthenticated requests are rejected before the
+// body is parsed, avoiding unnecessary memory allocation for large payloads.
+app.use(requireRouterApiKey);
+
+// Parse JSON request bodies with increased limit for large payloads
+app.use(express.json({ limit: '50mb' }));
+
+// OpenAI Models endpoint - proxy to Anthropic API with API key.
+// When ROUTER_API_KEY is set the router uses its own OAuth token for all
+// Anthropic calls and never receives a client Anthropic API key, so it cannot
+// forward a key to the upstream /v1/models endpoint.
 app.get('/v1/models', async (req: Request, res: Response) => {
+  if (ROUTER_API_KEY) {
+    res.status(501).json({
+      type: 'error',
+      error: {
+        type: 'not_implemented',
+        message:
+          '/v1/models is not available in authenticated proxy mode (ROUTER_API_KEY is set). The router uses its own OAuth token and cannot forward a client Anthropic API key to the upstream endpoint.',
+      },
+    });
+    return;
+  }
+
   try {
     // Check for API key in headers
     const apiKey =
@@ -570,7 +660,10 @@ async function startRouter() {
       );
     }
 
-    if (endpointConfig.allowBearerPassthrough) {
+    if (ROUTER_API_KEY) {
+      logger.startup('🔐 Authenticated proxy mode: ENABLED (ROUTER_API_KEY is set)');
+      logger.startup('🔑 Bearer token passthrough: DISABLED - all requests use router OAuth');
+    } else if (endpointConfig.allowBearerPassthrough) {
       logger.startup('🔑 Bearer token passthrough: ENABLED - clients can use their own API keys');
     } else {
       logger.startup('🔑 Bearer token passthrough: DISABLED - all requests use router OAuth');

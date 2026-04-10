@@ -307,8 +307,33 @@ npm run router -- --disable-bearer-passthrough
 
 See [BEARER-TOKEN-PASSTHROUGH.md](BEARER-TOKEN-PASSTHROUGH.md) for detailed documentation.
 
+### 🔒 Authenticated proxy mode (ROUTER_API_KEY)
+
+**Set `ROUTER_API_KEY` to require clients to authenticate with the router itself.**
+
+This is useful when you expose the router on a network and want to prevent unauthorized use.
+
+```bash
+ROUTER_API_KEY=my-secret-key npm run router
+```
+
+When set, every request (except `/health`) must include the key via either:
+- `Authorization: Bearer my-secret-key`
+- `x-api-key: my-secret-key`
+
+Requests without a valid key receive a `401 Unauthorized` response.
+
+**Interaction with bearer passthrough:** Bearer passthrough is automatically disabled in this mode. All Anthropic calls use the router's own OAuth token — the key is only used to authenticate the client to the router, not forwarded to Anthropic.
+
+**`/v1/models` limitation:** This endpoint returns `501 Not Implemented` in authenticated proxy mode. It normally requires a real Anthropic API key passed through from the client, which is incompatible with this mode.
+
+**`/health` is always unauthenticated** and can be used for liveness checks without a key.
+
+When `ROUTER_API_KEY` is unset, behavior is unchanged from the default.
+
 **Environment variables:**
 - `ROUTER_PORT=8080` - Set port
+- `ROUTER_API_KEY=<key>` - Enable authenticated proxy mode (see above)
 - `ANTHROPIC_DEFAULT_MODEL=claude-haiku-4-5` - Override model mapping for OpenAI requests
 
 ### Verbosity Examples
