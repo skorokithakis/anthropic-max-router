@@ -329,6 +329,8 @@ Requests without a valid key receive a `401 Unauthorized` response.
 
 **`/health` is always unauthenticated** and can be used for liveness checks without a key.
 
+**Note on SDK examples below:** The examples later in this README use `api_key="not-used"` or omit the key entirely — this only works when `ROUTER_API_KEY` is unset. In authenticated proxy mode, you must pass the router key as the SDK's API key so it is sent via `Authorization: Bearer <ROUTER_API_KEY>` (or set the `x-api-key` header directly).
+
 When `ROUTER_API_KEY` is unset, behavior is unchanged from the default.
 
 **Environment variables:**
