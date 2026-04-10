@@ -37,8 +37,14 @@ function askQuestion(prompt: string): Promise<string> {
 }
 
 // Read at startup so the value is fixed for the lifetime of the process.
-// Trim whitespace so accidental trailing newlines in env files don't silently
-// enable auth mode with an unmatchable key.
+// If the env var is explicitly set but empty/whitespace-only, that's a
+// misconfiguration — fail fast rather than silently running without auth.
+if (process.env.ROUTER_API_KEY !== undefined && process.env.ROUTER_API_KEY.trim() === '') {
+  throw new Error(
+    'ROUTER_API_KEY is set but empty or whitespace-only. ' +
+      'Either set it to a real key or remove it entirely to disable auth.'
+  );
+}
 const ROUTER_API_KEY: string | undefined = process.env.ROUTER_API_KEY?.trim() || undefined;
 
 // A random nonce used to HMAC both sides of every key comparison. This ensures
