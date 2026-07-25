@@ -1,0 +1,23 @@
+services:
+  router:
+    image: anthropic-max-router-test
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    working_dir: /creds
+    command: node --import tsx /app/src/router/server.ts
+    volumes:
+      - ./tmp/smoke:/creds
+      - ./src:/app/src:ro
+    ports:
+      - "3000:3000"
+    environment:
+      ROUTER_API_KEY: ${ROUTER_API_KEY:-smoke-test-key}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    tty: false
+    stdin_open: false

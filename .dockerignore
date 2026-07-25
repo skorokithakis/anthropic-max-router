@@ -1,0 +1,11 @@
+.oauth-tokens.json
+tokens.json
+*.tokens.json
+tmp
+**/.oauth-tokens.json
+**/*.tokens.json
+.tickets
+.env*
+node_modules
+dist
+.git

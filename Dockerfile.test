@@ -1,0 +1,11 @@
+FROM node:24-alpine
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci
+# Required: cwd is /creds, so node --import tsx needs a resolvable /node_modules above it; otherwise the loader is not found. Do not remove.
+RUN ln -s /app/node_modules /node_modules
+
+COPY tsconfig.json ./
+COPY src ./src

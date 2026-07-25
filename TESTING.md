@@ -2,6 +2,116 @@
 
 This guide provides comprehensive testing steps for the OpenAI API compatibility feature.
 
+## End-to-End Smoke Test
+
+The router runs in a Docker container with port 3000 published. `tests/smoke.py` runs on your
+machine and hits it. That is the whole setup.
+
+The script uses only the Python 3 standard library, so there is nothing to install for it.
+
+### Step 1: create the auth file (one time)
+
+The router authenticates to Anthropic with OAuth tokens stored in a file called
+`.oauth-tokens.json`. You never write this file by hand — the interactive CLI creates it. It
+must never be committed, and is already covered by `.gitignore`.
+
+```bash
+npm install
+npm start
+```
+
+In the menu:
+
+1. Choose option **1** (Authenticate).
+2. Copy the URL that is printed and open it in your browser yourself — it is not opened for
+   you, despite what the prompt says.
+3. Authorize. The page then shows a **code** and a **state** value.
+4. Paste both back into the prompt joined by a `#`, like `code#state`.
+
+You should see `✅ Tokens saved to .oauth-tokens.json`. Now choose option **6** to exit.
+
+> Do not choose option 4. That is Logout, and it deletes the tokens you just created.
+
+This is the only step that needs `npm install`, because the CLI runs through `tsx`.
+
+### Step 2: give the auth file to the container
+
+The container reads its credentials from `tmp/smoke/`, which is bind-mounted as the router's
+working directory. Copy the file in:
+
+```bash
+mkdir -p tmp/smoke
+cp .oauth-tokens.json tmp/smoke/
+```
+
+Do this again whenever you re-authenticate. The container refreshes the access token in place
+inside `tmp/smoke/`, so you do not need to copy anything back.
+
+A directory is mounted rather than the file itself on purpose: Docker silently creates a
+*directory* when a bind-mounted file path does not exist on the host, which fails in confusing
+ways.
+
+### Step 3: start the router
+
+```bash
+docker compose -f compose.test.yml up router
+```
+
+Leave it running. It listens on `http://localhost:3000`.
+
+If credentials are missing or invalid the container exits instead of starting — check its
+output. Note that because `ROUTER_API_KEY` is set, bearer passthrough is disabled and valid
+OAuth tokens are mandatory just to boot.
+
+### Step 4: run the test
+
+In another terminal:
+
+```bash
+ROUTER_API_KEY=smoke-test-key python3 tests/smoke.py
+```
+
+`smoke-test-key` is the default key the compose file gives the router. Pass the same value here
+so the script can authenticate; override both with your own `ROUTER_API_KEY` if you prefer.
+
+Five checks run, printing one line each:
+
+1. `/health` is reachable **without** credentials
+2. `/v1/messages` returns generated content
+3. `/v1/messages` with `stream: true` returns a valid SSE stream
+4. `/v1/chat/completions` (OpenAI-compatible) returns generated content
+5. A wrong API key is rejected with 401
+
+Exit code is 0 if everything passed, 1 otherwise. Raw response bodies are printed on failure.
+
+Nothing asserts on what the model actually says — only that non-empty content came back with
+HTTP 200. Model wording varies, and any content assertion would be a false negative waiting to
+happen.
+
+`ROUTER_URL` overrides the target if you are not on `http://localhost:3000`.
+
+### Running without Docker
+
+If you would rather run the router directly, `npm install` then:
+
+```bash
+# terminal 1
+ROUTER_API_KEY=smoke-test-key npm run router
+
+# terminal 2
+ROUTER_API_KEY=smoke-test-key python3 tests/smoke.py
+```
+
+In this mode the router reads `.oauth-tokens.json` from the repository root, so no copying is
+needed. Omit `ROUTER_API_KEY` from both commands to run unauthenticated — check 5 is then
+skipped.
+
+### A caveat about this test
+
+It calls the live Anthropic API, so it needs working credentials and fails when Anthropic is
+unreachable or your tokens have expired. Neither is a code defect. Run it by hand; never wire
+it into CI as a gate.
+
 ## Quick Test (Recommended First Step)
 
 ### 1. Start the Router with OpenAI Endpoint
