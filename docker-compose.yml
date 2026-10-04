@@ -2,8 +2,8 @@
 # OAuth token and mappings in the named data volume.
 #
 # On first deploy there are no OAuth tokens, so the service exits. Complete the
-# OAuth flow by exec'ing into the running container:
-#   docker exec -it <container> node /app/dist/router/server.js
+# OAuth flow with a TTY attached:
+#   docker compose run --rm -it main
 # The token is written to /data/.oauth-tokens.json and persists across restarts.
 
 services:

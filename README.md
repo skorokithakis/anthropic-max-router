@@ -283,8 +283,7 @@ docker compose run --rm -it main
 docker compose up -d
 ```
 
-`docker exec -it <container> node /app/dist/router/server.js` performs the same step on an
-already-running container. Set `ROUTER_HOST_PORT` to change the published port:
+Set `ROUTER_HOST_PORT` to change the published port:
 
 ```bash
 ROUTER_HOST_PORT=44292 docker compose up -d
