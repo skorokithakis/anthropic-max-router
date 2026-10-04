@@ -165,10 +165,36 @@ def check_wrong_key():
         report(5, False, f" ({error})")
 
 
+COUNT_TOKENS_MESSAGE = {
+    "model": "claude-haiku-4-5",
+    "messages": [{"role": "user", "content": "Say hello."}],
+}
+
+
+def check_count_tokens():
+    try:
+        status, _, body = request("/v1/messages/count_tokens", "POST", COUNT_TOKENS_MESSAGE)
+        data = parse(body)
+        input_tokens = data.get("input_tokens") if isinstance(data, dict) else None
+        print(f"  input_tokens: {input_tokens}")
+        passed = (
+            status == 200
+            and isinstance(input_tokens, int)
+            and not isinstance(input_tokens, bool)
+            and input_tokens > 0
+        )
+        if not passed:
+            print(f"Raw response: {body}")
+        report(6, passed)
+    except Exception as error:
+        report(6, False, f" ({error})")
+
+
 if check_health():
     check_message()
     check_streaming()
     check_openai()
     check_wrong_key()
+    check_count_tokens()
 
 sys.exit(1 if failed else 0)

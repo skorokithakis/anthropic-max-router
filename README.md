@@ -205,6 +205,7 @@ A standalone HTTP proxy server with **dual API endpoints** (Anthropic + OpenAI) 
 
 **Supports both API formats:**
 - `/v1/messages` - Native Anthropic Messages API
+- `/v1/messages/count_tokens` - Anthropic token counting passthrough
 - `/v1/chat/completions` - OpenAI Chat Completions API (auto-translates to Anthropic)
 
 Works with tools built for either Anthropic or OpenAI - just point them to `http://localhost:3000`!

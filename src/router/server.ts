@@ -236,6 +236,7 @@ const app = express();
 
 // Anthropic API configuration
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
+const ANTHROPIC_COUNT_TOKENS_URL = 'https://api.anthropic.com/v1/messages/count_tokens';
 const ANTHROPIC_VERSION = '2023-06-01';
 const ANTHROPIC_BETA =
   'oauth-2025-04-20,claude-code-20250219,interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14';
@@ -418,6 +419,63 @@ const handleMessagesRequest = async (req: Request, res: Response) => {
   }
 };
 
+// Shared handler for /v1/messages/count_tokens. Forwards the body untouched
+// and returns Anthropic's status and JSON body unchanged. Unlike /v1/messages
+// it must not strip fields (count_tokens rejects max_tokens/stream) or inject
+// the system prompt (which would inflate the count).
+const handleCountTokensRequest = async (req: Request, res: Response) => {
+  const requestId = Math.random().toString(36).substring(7);
+
+  try {
+    // Determine which authentication method to use
+    const clientBearerToken = extractBearerToken(req);
+    const usePassthrough = endpointConfig.allowBearerPassthrough && clientBearerToken !== null;
+
+    let accessToken: string;
+    if (usePassthrough) {
+      accessToken = clientBearerToken!;
+      if (logger['level'] === 'maximum') {
+        logger.info(`[Passthrough] Using client bearer token for request ${requestId}`);
+      }
+    } else {
+      // Get a valid OAuth access token (auto-refreshes if needed)
+      accessToken = await getValidAccessToken();
+      if (logger['level'] === 'maximum') {
+        logger.info(`[OAuth] Using router OAuth token for request ${requestId}`);
+      }
+    }
+
+    // Forward the request body as-is
+    const response = await fetch(ANTHROPIC_COUNT_TOKENS_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+        'anthropic-version': ANTHROPIC_VERSION,
+        'anthropic-beta': ANTHROPIC_BETA,
+      },
+      body: JSON.stringify(req.body),
+    });
+
+    const responseData = await response.json();
+    res.status(response.status).json(responseData);
+  } catch (error) {
+    logger.error(`[${requestId}] count_tokens request failed:`, error);
+
+    // If headers were already sent we cannot send an error response
+    if (res.headersSent) {
+      return;
+    }
+
+    res.status(500).json({
+      error: {
+        type: 'internal_error',
+        message: error instanceof Error ? error.message : 'An unexpected error occurred',
+      },
+    });
+  }
+};
+
 // OpenAI Chat Completions endpoint handler
 const handleChatCompletionsRequest = async (req: Request, res: Response) => {
   const requestId = Math.random().toString(36).substring(7);
@@ -567,6 +625,9 @@ const handleChatCompletionsRequest = async (req: Request, res: Response) => {
 if (endpointConfig.anthropicEnabled) {
   // Main Anthropic proxy endpoint
   app.post('/v1/messages', handleMessagesRequest);
+
+  // Token counting passthrough endpoint
+  app.post('/v1/messages/count_tokens', handleCountTokensRequest);
 
   // Route alias to handle Stagehand v3 SDK bug that doubles the /v1 prefix
   app.post('/v1/v1/messages', handleMessagesRequest);

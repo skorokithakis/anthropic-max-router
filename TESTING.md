@@ -74,13 +74,14 @@ ROUTER_API_KEY=smoke-test-key python3 tests/smoke.py
 `smoke-test-key` is the default key the compose file gives the router. Pass the same value here
 so the script can authenticate; override both with your own `ROUTER_API_KEY` if you prefer.
 
-Five checks run, printing one line each:
+Six checks run, printing one line each:
 
 1. `/health` is reachable **without** credentials
 2. `/v1/messages` returns generated content
 3. `/v1/messages` with `stream: true` returns a valid SSE stream
 4. `/v1/chat/completions` (OpenAI-compatible) returns generated content
 5. A wrong API key is rejected with 401
+6. `/v1/messages/count_tokens` returns a positive `input_tokens`
 
 Exit code is 0 if everything passed, 1 otherwise. Raw response bodies are printed on failure.
 
