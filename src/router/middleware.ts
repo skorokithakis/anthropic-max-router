@@ -22,11 +22,14 @@ const VALID_REQUEST_FIELDS = new Set([
   'thinking',
   'output_config',
   'output_format',
+  // Beta fields. They need the client's anthropic-beta values, which
+  // mergeBetaHeader forwards.
+  'context_management',
+  'cache_control',
 ]);
 
 /**
  * Strips unknown fields from the request to prevent API errors
- * Fields like 'context_management' from the Agent SDK are not supported
  */
 export function stripUnknownFields(request: Record<string, unknown>): AnthropicRequest {
   const sanitized: Record<string, unknown> = {};
@@ -36,6 +39,22 @@ export function stripUnknownFields(request: Record<string, unknown>): AnthropicR
     }
   }
   return sanitized as unknown as AnthropicRequest;
+}
+
+/**
+ * Combines the router's required betas with the client's anthropic-beta
+ * values, without duplicates. A client feature such as compaction
+ * (context_management) is rejected upstream unless its beta is sent.
+ */
+export function mergeBetaHeader(
+  routerBetas: string,
+  clientHeader: string | string[] | undefined
+): string {
+  const client = Array.isArray(clientHeader) ? clientHeader.join(',') : (clientHeader ?? '');
+  const betas = [...routerBetas.split(','), ...client.split(',')]
+    .map((beta) => beta.trim())
+    .filter((beta) => beta.length > 0);
+  return [...new Set(betas)].join(',');
 }
 
 /**

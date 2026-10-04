@@ -5,7 +5,7 @@ import readline from 'readline';
 import crypto from 'crypto';
 import { getValidAccessToken, loadTokens, saveTokens } from '../token-manager.js';
 import { startOAuthFlow, exchangeCodeForTokens } from '../oauth.js';
-import { ensureRequiredSystemPrompt, stripUnknownFields } from './middleware.js';
+import { ensureRequiredSystemPrompt, mergeBetaHeader, stripUnknownFields } from './middleware.js';
 import { AnthropicRequest, AnthropicResponse, OpenAIChatCompletionRequest } from '../types.js';
 import { logger } from './logger.js';
 import {
@@ -352,7 +352,7 @@ const handleMessagesRequest = async (req: Request, res: Response) => {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${accessToken}`,
         'anthropic-version': ANTHROPIC_VERSION,
-        'anthropic-beta': ANTHROPIC_BETA,
+        'anthropic-beta': mergeBetaHeader(ANTHROPIC_BETA, req.headers['anthropic-beta']),
       },
       body: JSON.stringify(modifiedRequest),
     });
@@ -452,7 +452,7 @@ const handleCountTokensRequest = async (req: Request, res: Response) => {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${accessToken}`,
         'anthropic-version': ANTHROPIC_VERSION,
-        'anthropic-beta': ANTHROPIC_BETA,
+        'anthropic-beta': mergeBetaHeader(ANTHROPIC_BETA, req.headers['anthropic-beta']),
       },
       body: JSON.stringify(req.body),
     });
