@@ -1,0 +1,23 @@
+# Production deployment. Builds the router from local source and keeps its
+# OAuth token and mappings in the named data volume.
+#
+# On first deploy there are no OAuth tokens, so the service exits. Complete the
+# OAuth flow by exec'ing into the running container:
+#   docker exec -it <container> node /app/dist/router/server.js
+# The token is written to /data/.oauth-tokens.json and persists across restarts.
+
+services:
+  main:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${ROUTER_HOST_PORT:-3000}:3000"
+    environment:
+      # No default: an unset ROUTER_API_KEY disables client authentication, so
+      # it must be provided explicitly in production.
+      - ROUTER_API_KEY
+    volumes:
+      - data:/data
+
+volumes:
+  data:

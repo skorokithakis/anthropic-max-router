@@ -263,6 +263,33 @@ npm run router -- -p 8080 --verbose        # Combine options
 
 **Subsequent runs:** Router starts immediately and auto-refreshes tokens.
 
+### Docker Deployment
+
+The production `Dockerfile` and `docker-compose.yml` build the router from local source.
+The service listens on `127.0.0.1:${ROUTER_HOST_PORT:-3000}` only and stores its OAuth
+token in the `data` named volume, so it survives restarts and rebuilds.
+
+```bash
+export ROUTER_API_KEY=my-secret-key   # required; there is no default
+docker compose up -d --build
+```
+
+**First run:** without OAuth tokens the container exits and restarts after printing an
+authorization URL. Complete the flow with a TTY attached, then start the service again:
+
+```bash
+docker compose run --rm -it main
+# Paste code#state when prompted; the token is saved to /data/.oauth-tokens.json.
+docker compose up -d
+```
+
+`docker exec -it <container> node /app/dist/router/server.js` performs the same step on an
+already-running container. Set `ROUTER_HOST_PORT` to change the published port:
+
+```bash
+ROUTER_HOST_PORT=44292 docker compose up -d
+```
+
 ### Command Line Options
 
 | Option | Short | Description |
